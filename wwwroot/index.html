@@ -1,0 +1,189 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>SmartStudyAgent 智能学习助手</title>
+    <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+    <main class="app-shell">
+        <header class="topbar">
+            <div class="brand">
+                <div class="brand-mark">S</div>
+                <div>
+                    <p class="eyebrow">.NET AI Agent</p>
+                    <h1>SmartStudyAgent</h1>
+                </div>
+            </div>
+            <div class="connection-pill">
+                <span id="connectionDot" class="status-dot"></span>
+                <span id="connectionText">正在连接后端</span>
+            </div>
+        </header>
+
+        <section class="stats-grid" aria-label="系统状态">
+            <article class="stat-card">
+                <span>当前模型</span>
+                <strong id="modelName">gpt-4o-mini</strong>
+            </article>
+            <article class="stat-card">
+                <span>Agents</span>
+                <strong id="agentCount">0 个</strong>
+            </article>
+            <article class="stat-card">
+                <span>Memory</span>
+                <strong id="memoryStatus">已启用</strong>
+            </article>
+            <article class="stat-card">
+                <span>Tools</span>
+                <strong id="toolCount">4 个</strong>
+            </article>
+            <article class="stat-card">
+                <span>课程资料</span>
+                <strong id="materialCount">0 份</strong>
+            </article>
+            <article class="stat-card">
+                <span>会话消息</span>
+                <strong id="messageCount">0 条</strong>
+            </article>
+        </section>
+
+        <section class="workspace upload-mode">
+            <nav class="module-rail" aria-label="功能模块">
+                <button class="module-item active" type="button" data-target="uploadModule">
+                    <span class="module-icon">↑</span>
+                    <span>资料上传</span>
+                </button>
+                <button class="module-item" type="button" data-target="chatModule">
+                    <span class="module-icon">问</span>
+                    <span>学习问答</span>
+                </button>
+            </nav>
+
+            <aside id="uploadModule" class="materials-panel panel module-panel">
+                <div class="panel-heading">
+                    <div>
+                        <p class="eyebrow">Upload Module</p>
+                        <h2>资料上传</h2>
+                    </div>
+                    <button id="refreshMaterials" class="icon-button" title="刷新资料" type="button">↻</button>
+                </div>
+
+                <form id="uploadForm" class="upload-card">
+                    <input id="uploadTitle" class="compact-input" type="text" placeholder="资料标题，可选">
+                    <label class="file-picker">
+                        <input id="materialFile" type="file" accept=".pdf,.pptx,.txt,.md" required>
+                        <span>选择 PDF / PPTX / TXT / MD</span>
+                    </label>
+                    <button type="submit">上传并读取</button>
+                    <p>建议使用可复制文字的 PDF 或 PPTX。上传后可在问答模块中总结、出题和制定学习计划。</p>
+                </form>
+
+                <div class="module-section-title">已上传资料</div>
+                <div id="materialsList" class="materials-list"></div>
+
+                <section class="knowledge-panel mini-panel">
+                    <div class="mini-panel-heading">
+                        <div>
+                            <p class="eyebrow">Knowledge Panel</p>
+                            <h3>知识点自动提取</h3>
+                        </div>
+                    </div>
+                    <div id="knowledgeTags" class="knowledge-tags empty-state">上传资料后会自动提取关键词、核心概念和重要术语。</div>
+                </section>
+            </aside>
+
+            <section id="chatModule" class="chat-panel panel module-panel">
+                <div class="panel-heading chat-heading">
+                    <div>
+                        <p class="eyebrow">Q&A Module</p>
+                        <h2>学习问答</h2>
+                    </div>
+                    <div class="session-controls">
+                        <select id="sessionSelect" title="切换会话"></select>
+                        <button id="newSession" class="secondary-button" type="button">新建会话</button>
+                        <button id="clearChat" class="secondary-button" type="button">清空记忆</button>
+                    </div>
+                </div>
+
+                <div id="messages" class="messages"></div>
+
+                <form id="chatForm" class="chat-form">
+                    <div class="chat-attachments">
+                        <button id="toggleMaterialPicker" class="attach-button" type="button">选择资料</button>
+                        <div id="selectedMaterials" class="selected-materials">未选择资料，默认检索全部已上传资料</div>
+                    </div>
+                    <textarea id="chatInput" rows="1" placeholder="向 SmartStudyAgent 提问..." autocomplete="off" required></textarea>
+                    <button type="submit">发送</button>
+                </form>
+            </section>
+
+            <aside class="trace-panel panel">
+                <div class="panel-heading">
+                    <div>
+                        <p class="eyebrow">Agent Trace</p>
+                        <h2>执行时间轴</h2>
+                    </div>
+                </div>
+                <div id="steps" class="timeline empty-state">
+                    发送问题后，这里会展示 Agent 的执行路径。
+                </div>
+                <section class="agent-decision mini-panel">
+                    <div class="mini-panel-heading">
+                        <div>
+                            <p class="eyebrow">Agent Decision</p>
+                            <h3>决策说明</h3>
+                        </div>
+                    </div>
+                    <div id="agentDecision" class="decision-card empty-state">完成一次回答后，这里会显示用户意图、选择的 Agent 和调用的工具。</div>
+                </section>
+
+                <section class="tool-history mini-panel">
+                    <div class="mini-panel-heading">
+                        <div>
+                            <p class="eyebrow">Tool History</p>
+                            <h3>工具调用历史</h3>
+                        </div>
+                    </div>
+                    <div id="toolHistory" class="history-list empty-state">暂无工具调用记录。</div>
+                </section>
+
+                <section class="learning-history mini-panel">
+                    <div class="mini-panel-heading">
+                        <div>
+                            <p class="eyebrow">Learning History</p>
+                            <h3>学习历史</h3>
+                        </div>
+                        <button id="clearLearningHistory" class="text-button" type="button">清空</button>
+                    </div>
+                    <div id="learningHistory" class="history-list empty-state">暂无学习历史。</div>
+                </section>
+            </aside>
+        </section>
+    </main>
+
+    <div id="materialPicker" class="picker-backdrop" hidden>
+        <section class="picker-dialog" role="dialog" aria-modal="true" aria-labelledby="materialPickerTitle">
+            <div class="picker-heading">
+                <div>
+                    <p class="eyebrow">Material Scope</p>
+                    <h2 id="materialPickerTitle">选择本次问答资料</h2>
+                </div>
+                <button id="closeMaterialPicker" class="icon-button" type="button" aria-label="关闭">×</button>
+            </div>
+            <div class="picker-toolbar">
+                <button id="selectAllMaterials" class="secondary-button" type="button">全选</button>
+                <button id="clearSelectedMaterials" class="secondary-button" type="button">清空选择</button>
+            </div>
+            <div id="materialPickerList" class="material-picker-list"></div>
+            <div class="picker-actions">
+                <button id="cancelMaterialPicker" class="secondary-button" type="button">取消</button>
+                <button id="saveMaterialPicker" class="primary-button" type="button">保存选择</button>
+            </div>
+        </section>
+    </div>
+
+    <script src="/app.js"></script>
+</body>
+</html>
