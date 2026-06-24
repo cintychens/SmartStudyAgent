@@ -5,8 +5,10 @@ using System.Xml.Linq;
 
 namespace SmartStudyAgent.Services;
 
+// DocumentTextExtractor 负责从 PPTX、PDF、TXT、MD 文件中提取可供 Agent 使用的纯文本。
 public static class DocumentTextExtractor
 {
+    // 根据文件扩展名选择对应的文本提取方式。
     public static async Task<string> ExtractAsync(
         string fileName,
         Stream fileStream,
@@ -24,12 +26,14 @@ public static class DocumentTextExtractor
 
     private static async Task<string> ReadPlainTextAsync(Stream stream, CancellationToken cancellationToken)
     {
+        // TXT 和 Markdown 直接按 UTF-8 读取，并自动识别 BOM。
         using var reader = new StreamReader(stream, Encoding.UTF8, detectEncodingFromByteOrderMarks: true);
         return NormalizeWhitespace(await reader.ReadToEndAsync(cancellationToken));
     }
 
     private static async Task<string> ExtractPptxAsync(Stream stream, CancellationToken cancellationToken)
     {
+        // PPTX 本质是 zip 包，这里读取 ppt/slides/slide*.xml 中的文本节点。
         using var memory = new MemoryStream();
         await stream.CopyToAsync(memory, cancellationToken);
         memory.Position = 0;
@@ -63,6 +67,7 @@ public static class DocumentTextExtractor
 
     private static async Task<string> ExtractPdfAsync(Stream stream, CancellationToken cancellationToken)
     {
+        // 先尝试从 PDF 内部文本流提取文字；扫描版 PDF 会在 DocumentService 中再交给 OCR 处理。
         using var memory = new MemoryStream();
         await stream.CopyToAsync(memory, cancellationToken);
         var bytes = memory.ToArray();
@@ -99,6 +104,7 @@ public static class DocumentTextExtractor
 
     private static Dictionary<int, string> BuildToUnicodeMap(string pdfText)
     {
+        // 读取 PDF 的 ToUnicode CMap，用于把内部字符编码映射为真正的 Unicode 文本。
         var map = new Dictionary<int, string>();
 
         foreach (Match streamMatch in PdfStreamRegex.Matches(pdfText))
@@ -126,6 +132,7 @@ public static class DocumentTextExtractor
         IReadOnlyDictionary<int, string> cmap,
         StringBuilder builder)
     {
+        // 解析 PDF 常见文本绘制操作符 Tj、TJ，并提取其中的字符串。
         foreach (Match match in PdfTjRegex.Matches(content))
         {
             AppendCandidate(builder, DecodePdfString(match.Groups[1].Value, cmap));
@@ -150,6 +157,7 @@ public static class DocumentTextExtractor
 
     private static string DecodePdfHexString(string value, IReadOnlyDictionary<int, string> cmap)
     {
+        // PDF 十六进制字符串可能需要先走 CMap，再尝试 UTF-8 或 Latin1 解码。
         var clean = Regex.Replace(value, @"\s+", string.Empty);
         if (clean.Length % 2 == 1)
         {
@@ -191,6 +199,7 @@ public static class DocumentTextExtractor
 
     private static string DecodePdfString(string value, IReadOnlyDictionary<int, string> cmap)
     {
+        // PDF 普通字符串需要处理转义字符，再按映射表或常见编码解码。
         var unescaped = DecodePdfLiteralBytes(value);
         if (cmap.Count > 0 && unescaped.Length >= 2)
         {
@@ -222,6 +231,7 @@ public static class DocumentTextExtractor
 
     private static byte[] DecodePdfLiteralBytes(string value)
     {
+        // 处理 PDF 字符串中的反斜杠转义和八进制转义。
         var output = new List<byte>();
 
         for (var index = 0; index < value.Length; index++)
@@ -282,6 +292,7 @@ public static class DocumentTextExtractor
 
     private static byte[]? TryInflate(byte[] bytes)
     {
+        // PDF 文本流常用 zlib 压缩，无法解压时返回 null 交给上层兜底。
         try
         {
             using var input = new MemoryStream(bytes);
@@ -309,6 +320,7 @@ public static class DocumentTextExtractor
 
     private static void AppendCandidate(StringBuilder builder, string value)
     {
+        // 只追加看起来像正常文本的候选内容，过滤乱码和无意义片段。
         value = Regex.Replace(value.Trim(), @"\s+", " ");
         if (IsUsefulText(value))
         {
@@ -345,6 +357,7 @@ public static class DocumentTextExtractor
 
     private static string NormalizeWhitespace(string value)
     {
+        // 统一清理空字符、换行和多余空白，方便后续检索和总结。
         var lines = value
             .Replace("\0", string.Empty)
             .ReplaceLineEndings("\n")

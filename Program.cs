@@ -8,19 +8,23 @@ using System.Text.Json;
 
 var builder = WebApplication.CreateBuilder(args);
 
+// 设置课程资料上传大小上限，Kestrel 和 multipart 表单解析都会使用这个限制。
 const long MaxUploadBytes = 100 * 1024 * 1024;
 var jsonOptions = new JsonSerializerOptions(JsonSerializerDefaults.Web);
 
+// 配置 Web 服务器允许上传较大的 PDF/PPTX 课程资料。
 builder.WebHost.ConfigureKestrel(options =>
 {
     options.Limits.MaxRequestBodySize = MaxUploadBytes;
 });
 
+// 配置 ASP.NET Core 表单解析，保证 multipart 文件上传不会被默认大小限制拦截。
 builder.Services.Configure<FormOptions>(options =>
 {
     options.MultipartBodyLengthLimit = MaxUploadBytes;
 });
 
+// 开启本地开发时的跨域访问，方便静态前端页面调用后端 API。
 builder.Services.AddCors(options =>
 {
     options.AddDefaultPolicy(policy =>
@@ -29,6 +33,7 @@ builder.Services.AddCors(options =>
             .AllowAnyMethod());
 });
 
+// 注册核心服务：LLM 调用、短期/长期记忆、资料存储、OCR 和轻量本地 RAG。
 builder.Services.AddHttpClient<ILlmService, OpenAiCompatibleLlmService>();
 builder.Services.AddSingleton<ConversationMemory>();
 builder.Services.AddSingleton<LongTermMemoryStore>();
@@ -36,6 +41,8 @@ builder.Services.AddSingleton<OcrService>();
 builder.Services.AddSingleton<DocumentService>();
 builder.Services.AddSingleton<LocalEmbeddingService>();
 builder.Services.AddSingleton<VectorRagService>();
+
+// 注册 Agent Loop 中可以调用的自定义工具。
 builder.Services.AddSingleton<DocumentSearchTool>();
 builder.Services.AddSingleton<MaterialSummaryTool>();
 builder.Services.AddSingleton<QuizTool>();
@@ -43,6 +50,8 @@ builder.Services.AddSingleton<StudyPlanTool>();
 builder.Services.AddSingleton<MaterialListTool>();
 builder.Services.AddSingleton<LearningInsightTool>();
 builder.Services.AddSingleton<StudyToolRegistry>();
+
+// 注册多个专门子 Agent，CoordinatorAgent 会把不同工具任务委托给它们执行。
 builder.Services.AddSingleton<IStudySubAgent, MaterialAgent>();
 builder.Services.AddSingleton<IStudySubAgent, PracticeAgent>();
 builder.Services.AddSingleton<IStudySubAgent, PlanningAgent>();
@@ -55,6 +64,7 @@ app.UseDefaultFiles();
 app.UseStaticFiles();
 app.UseCors();
 
+// 基础信息接口，用于前端确认后端服务和可用端点。
 app.MapGet("/api/info", () => Results.Ok(new
 {
     name = "SmartStudyAgent",
@@ -70,17 +80,20 @@ app.MapGet("/api/info", () => Results.Ok(new
     }
 }));
 
+// 返回已上传的课程资料列表，供资料管理模块展示。
 app.MapGet("/api/materials", async (DocumentService documents, CancellationToken cancellationToken) =>
 {
     var materials = await documents.ListMaterialsAsync(cancellationToken);
     return Results.Ok(materials);
 });
 
+// 返回 OCR 环境检测结果，用于判断 Tesseract、Poppler 等工具是否可用。
 app.MapGet("/api/ocr/status", (OcrService ocr) =>
 {
     return Results.Ok(ocr.GetStatus());
 });
 
+// 返回原始上传文件，前端可用它预览 PDF 或下载 PPTX/TXT/MD 原文件。
 app.MapGet("/api/materials/{id}/file", async (
     string id,
     DocumentService documents,
@@ -96,6 +109,7 @@ app.MapGet("/api/materials/{id}/file", async (
             enableRangeProcessing: true);
 });
 
+// 返回单份资料的文本预览和元数据。
 app.MapGet("/api/materials/{id}", async (
     string id,
     DocumentService documents,
@@ -105,6 +119,7 @@ app.MapGet("/api/materials/{id}", async (
     return preview is null ? Results.NotFound(new { error = "Material was not found." }) : Results.Ok(preview);
 });
 
+// 添加手动文本资料，这个接口独立于文件上传功能。
 app.MapPost("/api/materials", async (
     CreateMaterialRequest request,
     DocumentService documents,
@@ -119,6 +134,7 @@ app.MapPost("/api/materials", async (
     return Results.Created($"/api/materials/{material.Id}", material);
 });
 
+// 上传一个或多个文件；单文件保持旧响应格式，多文件返回批量结果。
 app.MapPost("/api/materials/upload", async (
     HttpRequest request,
     DocumentService documents,
@@ -131,47 +147,74 @@ app.MapPost("/api/materials/upload", async (
     }
 
     var form = await request.ReadFormAsync(cancellationToken);
-    var file = form.Files.GetFile("file");
-    if (file is null || file.Length == 0)
+    var files = form.Files.GetFiles("file").Where(file => file.Length > 0).ToList();
+    if (files.Count == 0)
     {
         return Results.BadRequest(new { error = "File is required." });
     }
 
-    if (file.Length > MaxUploadBytes)
+    if (files.Any(file => file.Length > MaxUploadBytes))
     {
         return Results.BadRequest(new { error = "File is too large. Please upload a file smaller than 100 MB." });
     }
 
-    var title = form.TryGetValue("title", out var titleValue) && !string.IsNullOrWhiteSpace(titleValue)
+    var sharedTitle = form.TryGetValue("title", out var titleValue) && !string.IsNullOrWhiteSpace(titleValue)
         ? titleValue.ToString()
-        : Path.GetFileNameWithoutExtension(file.FileName);
+        : string.Empty;
+    var uploaded = new List<CourseMaterial>();
+    var failed = new List<object>();
 
-    try
+    // 每个文件独立保存，避免某个文件解析失败导致整批上传全部失败。
+    foreach (var file in files)
     {
-        await using var stream = file.OpenReadStream();
-        var material = await documents.SaveUploadedMaterialBestEffortAsync(
-            title,
-            file.FileName,
-            stream,
-            cancellationToken);
+        var title = files.Count == 1 && !string.IsNullOrWhiteSpace(sharedTitle)
+            ? sharedTitle
+            : Path.GetFileNameWithoutExtension(file.FileName);
 
-        return Results.Created($"/api/materials/{material.Id}", material);
+        try
+        {
+            await using var stream = file.OpenReadStream();
+            var material = await documents.SaveUploadedMaterialBestEffortAsync(
+                title,
+                file.FileName,
+                stream,
+                cancellationToken);
+
+            uploaded.Add(material);
+        }
+        catch (NotSupportedException ex)
+        {
+            failed.Add(new { fileName = file.FileName, error = ex.Message });
+        }
+        catch (InvalidOperationException ex)
+        {
+            failed.Add(new { fileName = file.FileName, error = ex.Message });
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Failed to upload and parse material {FileName}", file.FileName);
+            failed.Add(new { fileName = file.FileName, error = $"文件解析失败：{ex.Message}" });
+            continue;
+        }
     }
-    catch (NotSupportedException ex)
+
+    // 单文件上传继续返回旧格式，保证已有前端代码兼容。
+    if (files.Count == 1)
     {
-        return Results.BadRequest(new { error = ex.Message });
+        return uploaded.Count == 1
+            ? Results.Created($"/api/materials/{uploaded[0].Id}", uploaded[0])
+            : Results.BadRequest(failed[0]);
     }
-    catch (InvalidOperationException ex)
+
+    if (uploaded.Count == 0)
     {
-        return Results.BadRequest(new { error = ex.Message });
+        return Results.BadRequest(new { materials = uploaded, failed });
     }
-    catch (Exception ex)
-    {
-        logger.LogError(ex, "Failed to upload and parse material {FileName}", file.FileName);
-        return Results.BadRequest(new { error = $"文件解析失败：{ex.Message}" });
-    }
+
+    return Results.Ok(new { materials = uploaded, failed });
 });
 
+// 删除课程资料，同时删除对应保存的原始文件。
 app.MapDelete("/api/materials/{id}", async (
     string id,
     DocumentService documents,
@@ -181,6 +224,7 @@ app.MapDelete("/api/materials/{id}", async (
     return deleted ? Results.NoContent() : Results.NotFound(new { error = "Material was not found." });
 });
 
+// 仅修改资料标题，不改变已经提取的正文和原始上传文件。
 app.MapPut("/api/materials/{id}", async (
     string id,
     UpdateMaterialRequest request,
@@ -196,6 +240,7 @@ app.MapPut("/api/materials/{id}", async (
     return material is null ? Results.NotFound(new { error = "Material was not found." }) : Results.Ok(material);
 });
 
+// 普通非流式 Agent 问答接口，直接返回完整回答。
 app.MapPost("/api/agent/chat", async (
     AgentChatRequest request,
     StudyAgent agent,
@@ -210,6 +255,7 @@ app.MapPost("/api/agent/chat", async (
     return Results.Ok(response);
 });
 
+// 流式 Agent 问答接口：先发送推理步骤，再按小片段发送最终回答。
 app.MapPost("/api/agent/chat/stream", async (
     AgentChatRequest request,
     StudyAgent agent,
@@ -244,6 +290,7 @@ app.MapPost("/api/agent/chat/stream", async (
     await response.WriteAsync("event: done\ndata: [DONE]\n\n", cancellationToken);
 });
 
+// 短期记忆接口，用于会话切换、历史消息读取和清空当前会话记忆。
 app.MapGet("/api/memory/{sessionId}", (string sessionId, ConversationMemory memory) =>
 {
     return Results.Ok(memory.GetMessages(sessionId));
@@ -260,6 +307,7 @@ app.MapDelete("/api/memory/{sessionId}", (string sessionId, ConversationMemory m
     return Results.NoContent();
 });
 
+// 长期记忆接口，用于保存学习目标和偏好，不影响普通对话 Memory。
 app.MapGet("/api/long-term-memory/{sessionId}", (string sessionId, LongTermMemoryStore memory) =>
 {
     return Results.Ok(memory.Get(sessionId));

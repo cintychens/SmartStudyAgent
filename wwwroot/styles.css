@@ -1,4 +1,5 @@
 :root {
+    /* 全局主题变量：控制蓝白配色、圆角和阴影。 */
     color-scheme: light;
     --bg: #f5f9ff;
     --surface: #ffffff;
@@ -18,6 +19,7 @@
 }
 
 body {
+    /* 页面固定为应用式布局，内部模块自己滚动。 */
     margin: 0;
     min-height: 100vh;
     overflow: hidden;
@@ -38,6 +40,7 @@ button {
 }
 
 .app-shell {
+    /* 应用外壳控制整体宽度和纵向布局。 */
     width: min(1520px, calc(100% - 32px));
     height: 100vh;
     margin: 0 auto;
@@ -50,6 +53,7 @@ button {
 .topbar,
 .stats-grid,
 .panel {
+    /* 顶部栏、统计卡片和面板共用白色卡片风格。 */
     border: 1px solid var(--border);
     border-radius: var(--radius);
     background: rgba(255, 255, 255, 0.94);
@@ -136,6 +140,7 @@ h2 {
 }
 
 .stats-grid {
+    /* 统计面板用栅格展示模型、Agent、Tool、Memory 等状态。 */
     display: grid;
     grid-template-columns: repeat(6, minmax(120px, 1fr));
     gap: 10px;
@@ -161,6 +166,7 @@ h2 {
 }
 
 .workspace {
+    /* 主工作区由左侧导航、中间业务模块和右侧 Trace 面板组成。 */
     flex: 1;
     min-height: 0;
     display: grid;
@@ -190,6 +196,7 @@ h2 {
 }
 
 .module-rail {
+    /* 左侧模块导航用于切换“资料上传”和“学习问答”。 */
     display: grid;
     align-content: start;
     gap: 10px;
@@ -306,6 +313,7 @@ h2 {
 }
 
 .upload-card {
+    /* 上传卡片承载标题输入、文件选择、上传进度和提交按钮。 */
     display: grid;
     gap: 10px;
     padding: 12px;
@@ -341,6 +349,50 @@ h2 {
     max-width: 100%;
 }
 
+.upload-status {
+    min-height: 20px;
+    color: var(--primary);
+    font-size: 12px;
+    font-weight: 800;
+    line-height: 1.5;
+}
+
+.upload-selected-files {
+    display: grid;
+    gap: 6px;
+    color: var(--text);
+    font-size: 12px;
+}
+
+.upload-selected-files:empty {
+    display: none;
+}
+
+.upload-selected-files ul {
+    display: grid;
+    gap: 4px;
+    max-height: 120px;
+    margin: 0;
+    padding: 0;
+    overflow-y: auto;
+    list-style: none;
+}
+
+.upload-selected-files li {
+    display: flex;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 7px 9px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: #fff;
+}
+
+.upload-selected-files span {
+    color: var(--muted);
+    white-space: nowrap;
+}
+
 .upload-card button,
 .chat-form button {
     min-height: 42px;
@@ -360,6 +412,7 @@ h2 {
 .materials-list,
 .timeline,
 .messages {
+    /* 资料列表、执行时间轴和聊天记录都在各自容器内部滚动。 */
     min-height: 0;
     overflow-y: auto;
 }
@@ -373,6 +426,7 @@ h2 {
 }
 
 .material-item {
+    /* 单份课程资料以卡片形式展示，右上角放预览、重命名和删除按钮。 */
     position: relative;
     padding: 13px 86px 13px 13px;
     border-radius: 13px;
@@ -434,6 +488,7 @@ h2 {
 }
 
 .messages {
+    /* 聊天消息区域负责展示用户气泡、AI 气泡和欢迎卡片。 */
     flex: 1;
     padding: 18px 22px;
 }
@@ -541,6 +596,7 @@ h2 {
 }
 
 .chat-form {
+    /* 底部输入框固定在聊天面板底部，包含资料选择和发送按钮。 */
     display: grid;
     grid-template-columns: 1fr auto;
     gap: 10px;
@@ -589,6 +645,7 @@ h2 {
 }
 
 .picker-backdrop {
+    /* 资料选择弹窗覆盖页面，用于选择本次问答要参考的资料范围。 */
     position: fixed;
     inset: 0;
     z-index: 30;
@@ -690,6 +747,7 @@ h2 {
 }
 
 .timeline {
+    /* 右侧 ReAct Trace 时间轴展示 Agent 执行步骤。 */
     display: grid;
     align-content: start;
     gap: 10px;
@@ -773,6 +831,7 @@ h2 {
 }
 
 .mini-panel {
+    /* 小型信息面板用于 Agent Decision、Tool History 和 Learning History。 */
     margin-top: 14px;
     padding: 14px;
     border: 1px solid var(--border);
@@ -874,35 +933,13 @@ h2 {
     line-height: 1.45;
 }
 
-.knowledge-panel {
-    flex: 0 0 auto;
-}
-
-.knowledge-tags {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-}
-
-.knowledge-tag {
-    padding: 7px 10px;
-    border-radius: 999px;
-    background: var(--primary-soft);
-    color: var(--primary-dark);
-    font-weight: 800;
-}
-
-.knowledge-tag:hover {
-    background: var(--primary);
-    color: white;
-}
-
 .empty-state {
     color: var(--muted);
     line-height: 1.7;
 }
 
 .modal-backdrop {
+    /* 通用弹窗背景，资料预览会复用这个样式。 */
     position: fixed;
     inset: 0;
     z-index: 20;
@@ -1017,6 +1054,7 @@ h2 {
 }
 
 @media (max-width: 1180px) {
+    /* 中等屏幕下改为单列布局，保证平板和小窗口可用。 */
     body {
         overflow: auto;
     }
@@ -1059,6 +1097,7 @@ h2 {
 }
 
 @media (max-width: 720px) {
+    /* 手机宽度下进一步压缩间距，并让表单控件纵向排列。 */
     .app-shell {
         width: min(100% - 20px, 1520px);
         padding: 10px 0;

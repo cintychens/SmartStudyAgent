@@ -42,6 +42,13 @@ Data/
 .build-enhance-panels-check/
 .build-material-picker-dialog-check/
 .build-dashboard-enhance-check/
+.build-document-read-check/
+.build-quiz-count-check/
+.build-multi-upload-check/
+.build-comment-check/
+.build-requirement-check/
+.build-upload-progress-check/
+.build-remove-knowledge-panel-check/
 .run-check/
 .vs/
 .vscode/

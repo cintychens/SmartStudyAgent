@@ -2,6 +2,7 @@ using SmartStudyAgent.Models;
 
 namespace SmartStudyAgent.Tools;
 
+//  统一保存所有工具，负责按工具名查找并执行工具。
 public sealed class StudyToolRegistry
 {
     private readonly IReadOnlyDictionary<string, IStudyTool> _tools;
@@ -28,6 +29,7 @@ public sealed class StudyToolRegistry
 
     public IReadOnlyList<IStudyTool> ListTools() => _tools.Values.ToList();
 
+    // 根据 ToolCallPlan 中的 ToolName 找到对应工具并执行。
     public async Task<ToolExecutionResult> ExecuteAsync(
         ToolCallPlan plan,
         CancellationToken cancellationToken)

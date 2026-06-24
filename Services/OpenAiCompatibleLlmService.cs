@@ -1,9 +1,11 @@
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 
 namespace SmartStudyAgent.Services;
 
+// OpenAiCompatibleLlmService 负责调用 OpenAI 兼容格式的大模型 API，也提供 Mock 兜底。
 public sealed class OpenAiCompatibleLlmService : ILlmService
 {
     private readonly HttpClient _httpClient;
@@ -25,12 +27,14 @@ public sealed class OpenAiCompatibleLlmService : ILlmService
         string userPrompt,
         CancellationToken cancellationToken)
     {
+        // Provider 为 Mock 时不请求外部 API，方便没有 Key 时演示 Agent 流程。
         var provider = _configuration["Llm:Provider"] ?? "Mock";
         if (provider.Equals("Mock", StringComparison.OrdinalIgnoreCase))
         {
             return BuildMockResponse(userPrompt);
         }
 
+        // 从配置中读取模型名称、API Key 和 OpenAI 兼容接口地址。
         var endpoint = BuildEndpoint();
         var model = _configuration["Llm:Model"];
         var apiKey = _configuration["Llm:ApiKey"];
@@ -47,6 +51,7 @@ public sealed class OpenAiCompatibleLlmService : ILlmService
             request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
         }
 
+        // 使用 OpenAI chat/completions 兼容的 messages 格式。
         var payload = new
         {
             model,
@@ -65,6 +70,7 @@ public sealed class OpenAiCompatibleLlmService : ILlmService
 
         try
         {
+            // 调用真实模型接口，失败时回退到 Mock，保证系统仍可演示。
             using var response = await _httpClient.SendAsync(request, cancellationToken);
             var body = await response.Content.ReadAsStringAsync(cancellationToken);
 
@@ -94,6 +100,7 @@ public sealed class OpenAiCompatibleLlmService : ILlmService
 
     private string? BuildEndpoint()
     {
+        // 优先使用完整 Endpoint；否则用 BaseUrl 拼出 /chat/completions。
         var endpoint = _configuration["Llm:Endpoint"];
         if (!string.IsNullOrWhiteSpace(endpoint))
         {
@@ -108,6 +115,7 @@ public sealed class OpenAiCompatibleLlmService : ILlmService
 
     private static string BuildMockResponse(string prompt)
     {
+        // Mock 模式根据提示词类型返回演示回答，便于没有真实模型时测试流程。
         if (prompt.Contains("Please summarize this course material", StringComparison.OrdinalIgnoreCase))
         {
             var material = ExtractAfter(prompt, "Please summarize this course material in Chinese:");
@@ -121,18 +129,25 @@ public sealed class OpenAiCompatibleLlmService : ILlmService
                    """;
         }
 
-        if (prompt.Contains("Create 5 practice questions", StringComparison.OrdinalIgnoreCase))
+        if (prompt.Contains("请根据下面资料生成恰好", StringComparison.OrdinalIgnoreCase)
+            || prompt.Contains("## 练习题", StringComparison.OrdinalIgnoreCase))
         {
-            return """
-                   练习题：
-                   1. 这份资料的主题是什么？
-                   2. 资料中出现了哪些关键概念？
-                   3. 资料里的流程或步骤有哪些？
-                   4. 哪些内容适合作为答辩重点？
-                   5. 如果要复习这份资料，应该先看哪一部分？
+            var count = ExtractRequestedQuizCount(prompt);
+            var builder = new StringBuilder();
+            builder.AppendLine("## 练习题");
+            for (var index = 1; index <= count; index++)
+            {
+                builder.AppendLine($"{index}. 【选择题】这份资料中的第 {index} 个重点适合如何复习？");
+                builder.AppendLine("   A. 只记文件名");
+                builder.AppendLine("   B. 结合资料正文理解概念和代码");
+                builder.AppendLine("   C. 跳过示例");
+                builder.AppendLine("   D. 不做练习");
+                builder.AppendLine("   答案：B");
+                builder.AppendLine("   解析：Mock 模式只能生成占位题；配置真实模型后会根据资料正文生成更具体的题目。");
+                builder.AppendLine();
+            }
 
-                   Mock LLM 提示：配置真实模型后，会根据资料内容生成更具体的题目和答案解析。
-                   """;
+            return builder.ToString().Trim();
         }
 
         if (prompt.Contains("Create a 3-day study plan", StringComparison.OrdinalIgnoreCase))
@@ -182,5 +197,14 @@ public sealed class OpenAiCompatibleLlmService : ILlmService
     {
         value = value.ReplaceLineEndings(Environment.NewLine).Trim();
         return value.Length <= maxLength ? value : value[..maxLength] + "...";
+    }
+
+    private static int ExtractRequestedQuizCount(string prompt)
+    {
+        // Mock 出题也会尽量遵守用户请求的题目数量。
+        var match = Regex.Match(prompt, @"生成恰好\s*(?<count>\d{1,2})\s*道");
+        return match.Success && int.TryParse(match.Groups["count"].Value, out var count)
+            ? Math.Clamp(count, 1, 30)
+            : 5;
     }
 }

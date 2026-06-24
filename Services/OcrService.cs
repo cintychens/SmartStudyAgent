@@ -3,6 +3,7 @@ using System.Text;
 
 namespace SmartStudyAgent.Services;
 
+// OcrService 调用本机外部工具实现扫描版 PDF 的文字识别。
 public sealed class OcrService
 {
     private readonly string _tempDirectory;
@@ -17,10 +18,52 @@ public sealed class OcrService
 
     public OcrStatus GetStatus()
     {
+        // 检测 Tesseract、Poppler 或 MuPDF 是否已经安装并可被程序找到。
         return new OcrStatus(
             FindTool("tesseract") is not null,
             FindTool("pdftoppm") is not null,
             FindTool("mutool") is not null);
+    }
+
+    public async Task<string> ExtractPdfTextLayerAsync(
+        byte[] pdfBytes,
+        string originalFileName,
+        CancellationToken cancellationToken)
+    {
+        // pdftotext 用于读取 PDF 自带文本层，比 OCR 更快也更准确。
+        var pdftotext = FindTool("pdftotext");
+        if (pdftotext is null)
+        {
+            _logger.LogInformation("PDF text layer extraction skipped because pdftotext was not found.");
+            return string.Empty;
+        }
+
+        var workDirectory = Path.Combine(_tempDirectory, Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(workDirectory);
+
+        try
+        {
+            var inputPdf = Path.Combine(workDirectory, MakeSafeFileName(originalFileName));
+            await File.WriteAllBytesAsync(inputPdf, pdfBytes, cancellationToken);
+
+            var result = await RunProcessAsync(
+                pdftotext,
+                $"-layout -enc UTF-8 \"{inputPdf}\" -",
+                cancellationToken);
+
+            return Normalize(result.StdOut);
+        }
+        finally
+        {
+            try
+            {
+                Directory.Delete(workDirectory, recursive: true);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogDebug(ex, "Failed to delete PDF text temp directory {Directory}", workDirectory);
+            }
+        }
     }
 
     public async Task<string> ExtractPdfTextAsync(
@@ -28,6 +71,7 @@ public sealed class OcrService
         string originalFileName,
         CancellationToken cancellationToken)
     {
+        // OCR 流程：先把 PDF 每页渲染成图片，再用 Tesseract 识别图片文字。
         var tesseract = FindTool("tesseract");
         if (tesseract is null)
         {
@@ -89,6 +133,7 @@ public sealed class OcrService
         string outputDirectory,
         CancellationToken cancellationToken)
     {
+        // Poppler 使用 pdftoppm 渲染；MuPDF 使用 mutool draw 渲染。
         var rendererName = Path.GetFileNameWithoutExtension(renderer).ToLowerInvariant();
         if (rendererName == "pdftoppm")
         {
@@ -112,6 +157,7 @@ public sealed class OcrService
         string imagePath,
         CancellationToken cancellationToken)
     {
+        // 优先用中文+英文识别；如果中文语言包缺失，再退回英文识别。
         var result = await RunProcessAsync(
             tesseract,
             $"\"{imagePath}\" stdout -l chi_sim+eng --psm 6",
@@ -136,6 +182,7 @@ public sealed class OcrService
         string arguments,
         CancellationToken cancellationToken)
     {
+        // 统一启动外部命令并读取标准输出/错误输出，便于记录 OCR 问题。
         var startInfo = new ProcessStartInfo
         {
             FileName = fileName,
@@ -172,6 +219,7 @@ public sealed class OcrService
 
     private static string? FindTool(string name)
     {
+        // 先查 PATH，再查 Windows 常见安装目录和 winget 包目录。
         var paths = (Environment.GetEnvironmentVariable("PATH") ?? string.Empty)
             .Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 
@@ -196,6 +244,7 @@ public sealed class OcrService
 
     private static IEnumerable<string> GetKnownToolDirectories(string name)
     {
+        // Windows 下补充 Tesseract、Poppler、MuPDF 的常见安装位置。
         if (!OperatingSystem.IsWindows())
         {
             yield break;
@@ -209,6 +258,7 @@ public sealed class OcrService
         }
 
         if (!name.Equals("pdftoppm", StringComparison.OrdinalIgnoreCase)
+            && !name.Equals("pdftotext", StringComparison.OrdinalIgnoreCase)
             && !name.Equals("mutool", StringComparison.OrdinalIgnoreCase))
         {
             yield break;
@@ -249,6 +299,7 @@ public sealed class OcrService
 
     private static string Normalize(string value)
     {
+        // 清理 OCR 输出中的空字符、空行和多余空白。
         var lines = value
             .Replace("\0", string.Empty)
             .ReplaceLineEndings("\n")
@@ -267,5 +318,6 @@ public sealed record OcrStatus(
     bool HasPopplerPdftoppm,
     bool HasMuPdfMutool)
 {
+    // OCR 就绪条件：Tesseract 可用，并且至少有一个 PDF 渲染工具可用。
     public bool IsReady => HasTesseract && (HasPopplerPdftoppm || HasMuPdfMutool);
 }

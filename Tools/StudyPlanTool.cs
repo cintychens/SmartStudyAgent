@@ -3,6 +3,7 @@ using SmartStudyAgent.Services;
 
 namespace SmartStudyAgent.Tools;
 
+//  根据用户目标和课程资料生成学习计划。
 public sealed class StudyPlanTool : IStudyTool
 {
     private readonly DocumentService _documents;
@@ -23,10 +24,12 @@ public sealed class StudyPlanTool : IStudyTool
         CancellationToken cancellationToken)
     {
         var goal = arguments.TryGetValue("goal", out var value) ? value : "学习课程资料";
+        // 根据用户是否选择资料，决定只读取指定资料还是读取全部资料。
         var selectedMaterialIds = ToolArgumentHelper.GetMaterialIds(arguments);
         var corpus = selectedMaterialIds.Count > 0
             ? await _documents.BuildCorpusAsync(selectedMaterialIds, cancellationToken)
             : await _documents.BuildCorpusAsync(cancellationToken);
+        // 控制资料上下文长度，让计划生成保持稳定和快速。
         var clipped = corpus.Length > 4000 ? corpus[..4000] : corpus;
 
         var plan = await _llm.CompleteAsync(

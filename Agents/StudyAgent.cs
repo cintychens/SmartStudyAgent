@@ -5,6 +5,7 @@ using SmartStudyAgent.Tools;
 
 namespace SmartStudyAgent.Agents;
 
+// StudyAgent 是系统的协调 Agent，负责完成“思考 -> 选择工具 -> 观察结果 -> 输出答案”的 Agent Loop。
 public sealed class StudyAgent
 {
     private readonly StudyToolRegistry _tools;
@@ -37,16 +38,19 @@ public sealed class StudyAgent
         AgentChatRequest request,
         CancellationToken cancellationToken)
     {
+        // 没有传入 SessionId 时创建新会话；有 SessionId 时继续当前上下文。
         var sessionId = string.IsNullOrWhiteSpace(request.SessionId)
             ? Guid.NewGuid().ToString("N")
             : request.SessionId;
 
+        // 把用户问题写入短期记忆，保证后续追问能读取上下文。
         _memory.Add(sessionId, "user", request.Message);
 
         var steps = new List<AgentStep>();
         var maxSteps = Math.Clamp(request.MaxSteps, 1, 8);
         var observations = new List<string>();
 
+        // Agent Loop：每轮先规划工具，再委托给合适的子 Agent 执行。
         for (var step = 1; step <= maxSteps; step++)
         {
             var plan = PlanNextAction(request.Message, observations);
@@ -79,6 +83,7 @@ public sealed class StudyAgent
             }
         }
 
+        // 基于工具观察结果、短期记忆和长期记忆生成最终回答。
         var answer = await BuildFinalAnswerAsync(
             sessionId,
             request.Message,
@@ -88,6 +93,7 @@ public sealed class StudyAgent
 
         _memory.Add(sessionId, "assistant", answer);
 
+        // 返回答案、执行步骤和当前会话记忆，供前端展示。
         return new AgentChatResponse(
             sessionId,
             answer,
@@ -97,6 +103,7 @@ public sealed class StudyAgent
 
     private IStudySubAgent SelectSubAgent(string toolName)
     {
+        // 根据工具名称选择能处理该任务的子 Agent。
         var subAgent = _subAgents.FirstOrDefault(agent => agent.CanHandle(toolName));
         if (subAgent is not null)
         {
@@ -108,11 +115,13 @@ public sealed class StudyAgent
 
     private static ToolCallPlan PlanNextAction(string userMessage, IReadOnlyList<string> observations)
     {
+        // 如果已经有工具观察结果，本轮就停止继续调用工具，进入最终回答阶段。
         if (observations.Count > 0)
         {
             return new ToolCallPlan("已有工具观察结果，可以生成最终回答。", "finish", new Dictionary<string, string>());
         }
 
+        // 轻量意图识别会基于用户问题中的关键词选择最合适的工具。
         var message = userMessage.ToLowerInvariant();
 
         if (ContainsAny(message, "有哪些资料", "列出资料", "资料列表", "查看资料", "已有资料", "list materials"))
@@ -175,6 +184,7 @@ public sealed class StudyAgent
         IReadOnlyList<AgentStep> steps,
         CancellationToken cancellationToken)
     {
+        // 总结、检索和出题类工具已经生成完整回答时，直接返回工具结果。
         if (steps.Count == 1
             && steps[0].Action is "summarize_material" or "search_materials" or "generate_quiz")
         {
@@ -190,6 +200,7 @@ public sealed class StudyAgent
         var longTermMemory = _longTermMemory.Get(sessionId);
         var toolList = string.Join(Environment.NewLine, _tools.ListTools().Select(t => $"- {t.Name}: {t.Description}"));
 
+        // 系统提示词约束模型必须基于当前工具观察结果回答，避免被旧记忆带偏。
         var systemPrompt = """
                            You are SmartStudyAgent, a .NET learning assistant.
                            Answer in Chinese.
@@ -225,6 +236,7 @@ public sealed class StudyAgent
 
     private static bool ShouldStopAfterTool(string toolName)
     {
+        // 当前项目中的工具都是“一次工具调用即可支撑最终回答”的任务。
         return toolName is "search_materials"
             or "summarize_material"
             or "generate_quiz"
@@ -259,6 +271,7 @@ public sealed class StudyAgent
 
     private static void AddSelectedMaterials(ToolCallPlan plan, IReadOnlyList<string>? materialIds)
     {
+        // 把前端勾选的资料 ID 注入工具参数，确保 Agent 只围绕指定资料回答。
         if (materialIds is null || materialIds.Count == 0 || plan.ToolName.Equals("finish", StringComparison.OrdinalIgnoreCase))
         {
             return;
@@ -274,6 +287,7 @@ public sealed class StudyAgent
         IReadOnlyList<string>? materialIds,
         CancellationToken cancellationToken)
     {
+        // 在最终回答前追加“本次回答基于哪些资料”，让用户明确答案来源。
         if (materialIds is null || materialIds.Count == 0)
         {
             return answer;

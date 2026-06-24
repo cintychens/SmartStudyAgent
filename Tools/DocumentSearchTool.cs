@@ -3,6 +3,7 @@ using SmartStudyAgent.Services;
 
 namespace SmartStudyAgent.Tools;
 
+// DocumentSearchTool 负责从课程资料中检索与用户问题相关的内容。
 public sealed class DocumentSearchTool : IStudyTool
 {
     private readonly DocumentService _documents;
@@ -22,6 +23,7 @@ public sealed class DocumentSearchTool : IStudyTool
         IReadOnlyDictionary<string, string> arguments,
         CancellationToken cancellationToken)
     {
+        // 优先读取聊天框中用户明确选择的资料，避免答案被其他文档干扰。
         var query = arguments.TryGetValue("query", out var value) ? value : string.Empty;
         var selectedMaterialIds = ToolArgumentHelper.GetMaterialIds(arguments);
         if (selectedMaterialIds.Count > 0)
@@ -46,6 +48,7 @@ public sealed class DocumentSearchTool : IStudyTool
             return new ToolExecutionResult(Name, string.Join(Environment.NewLine, observations));
         }
 
+        // 如果问题中直接包含某份资料标题，则先精确匹配这份资料。
         var matchedMaterial = await _documents.FindMaterialContentAsync(query, cancellationToken);
         if (matchedMaterial is not null)
         {
@@ -73,6 +76,7 @@ public sealed class DocumentSearchTool : IStudyTool
                 $"1. [{matchedMaterial.Title}] {snippet.ReplaceLineEndings(" ")}");
         }
 
+        // 精确匹配失败时，使用轻量本地 RAG 检索相关文档片段。
         var ragResults = await _rag.SearchAsync(query, 5, cancellationToken);
 
         if (ragResults.Count > 0)
@@ -84,6 +88,7 @@ public sealed class DocumentSearchTool : IStudyTool
             return new ToolExecutionResult(Name, ragObservation);
         }
 
+        // RAG 没有命中时，退回到关键词检索作为兜底。
         var results = await _documents.SearchAsync(query, 5, cancellationToken);
 
         if (results.Count == 0)

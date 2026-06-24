@@ -8,6 +8,7 @@
 </head>
 <body>
     <main class="app-shell">
+        <!-- 顶部品牌栏：展示系统名称和后端连接状态。 -->
         <header class="topbar">
             <div class="brand">
                 <div class="brand-mark">S</div>
@@ -49,6 +50,7 @@
             </article>
         </section>
 
+        <!-- 主工作区：通过左侧模块按钮在资料上传和学习问答之间切换。 -->
         <section class="workspace upload-mode">
             <nav class="module-rail" aria-label="功能模块">
                 <button class="module-item active" type="button" data-target="uploadModule">
@@ -61,6 +63,7 @@
                 </button>
             </nav>
 
+            <!-- 资料上传模块：上传课程文件、显示资料列表和自动提取的知识点。 -->
             <aside id="uploadModule" class="materials-panel panel module-panel">
                 <div class="panel-heading">
                     <div>
@@ -70,30 +73,24 @@
                     <button id="refreshMaterials" class="icon-button" title="刷新资料" type="button">↻</button>
                 </div>
 
+                <!-- 文件上传表单：支持 PDF、PPTX、TXT、MD 课程资料。 -->
                 <form id="uploadForm" class="upload-card">
                     <input id="uploadTitle" class="compact-input" type="text" placeholder="资料标题，可选">
                     <label class="file-picker">
-                        <input id="materialFile" type="file" accept=".pdf,.pptx,.txt,.md" required>
+                        <input id="materialFile" type="file" accept=".pdf,.pptx,.txt,.md" multiple required>
                         <span>选择 PDF / PPTX / TXT / MD</span>
                     </label>
+                    <div id="uploadStatus" class="upload-status" aria-live="polite"></div>
+                    <div id="uploadSelectedFiles" class="upload-selected-files" aria-live="polite"></div>
                     <button type="submit">上传并读取</button>
                     <p>建议使用可复制文字的 PDF 或 PPTX。上传后可在问答模块中总结、出题和制定学习计划。</p>
                 </form>
 
                 <div class="module-section-title">已上传资料</div>
                 <div id="materialsList" class="materials-list"></div>
-
-                <section class="knowledge-panel mini-panel">
-                    <div class="mini-panel-heading">
-                        <div>
-                            <p class="eyebrow">Knowledge Panel</p>
-                            <h3>知识点自动提取</h3>
-                        </div>
-                    </div>
-                    <div id="knowledgeTags" class="knowledge-tags empty-state">上传资料后会自动提取关键词、核心概念和重要术语。</div>
-                </section>
             </aside>
 
+            <!-- 学习问答模块：展示对话、资料选择和底部输入框。 -->
             <section id="chatModule" class="chat-panel panel module-panel">
                 <div class="panel-heading chat-heading">
                     <div>
@@ -109,6 +106,7 @@
 
                 <div id="messages" class="messages"></div>
 
+                <!-- 聊天输入区：支持选择资料范围、输入问题和发送消息。 -->
                 <form id="chatForm" class="chat-form">
                     <div class="chat-attachments">
                         <button id="toggleMaterialPicker" class="attach-button" type="button">选择资料</button>
@@ -119,6 +117,7 @@
                 </form>
             </section>
 
+            <!-- Agent 可视化模块：展示 ReAct 时间轴、决策说明和历史记录。 -->
             <aside class="trace-panel panel">
                 <div class="panel-heading">
                     <div>
@@ -163,6 +162,7 @@
         </section>
     </main>
 
+    <!-- 资料选择弹窗：用于在聊天前选择一个或多个已上传资料作为回答范围。 -->
     <div id="materialPicker" class="picker-backdrop" hidden>
         <section class="picker-dialog" role="dialog" aria-modal="true" aria-labelledby="materialPickerTitle">
             <div class="picker-heading">

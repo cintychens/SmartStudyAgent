@@ -3,6 +3,7 @@ using SmartStudyAgent.Services;
 
 namespace SmartStudyAgent.Tools;
 
+// MaterialSummaryTool 负责对单份资料、选中资料或全部资料生成学习总结。
 public sealed class MaterialSummaryTool : IStudyTool
 {
     private readonly DocumentService _documents;
@@ -22,10 +23,12 @@ public sealed class MaterialSummaryTool : IStudyTool
         IReadOnlyDictionary<string, string> arguments,
         CancellationToken cancellationToken)
     {
+        // target 来自用户问题，materialIds 来自聊天框中显式选择的资料。
         var target = arguments.TryGetValue("target", out var value) ? value : string.Empty;
         var selectedMaterialIds = ToolArgumentHelper.GetMaterialIds(arguments);
         string content;
 
+        // 如果前端选择了资料，则优先只总结这些资料。
         if (selectedMaterialIds.Count > 0)
         {
             var selectedMaterials = await _documents.GetMaterialContentsByIdsAsync(selectedMaterialIds, cancellationToken);
@@ -60,6 +63,7 @@ public sealed class MaterialSummaryTool : IStudyTool
             return new ToolExecutionResult(Name, "No material content is available for summary.");
         }
 
+        // 限制传给模型的上下文长度，避免请求过大。
         var clipped = content.Length > 6000 ? content[..6000] : content;
         var summary = await _llm.CompleteAsync(
             """
@@ -76,6 +80,7 @@ public sealed class MaterialSummaryTool : IStudyTool
         IReadOnlyList<MaterialContent> materials,
         CancellationToken cancellationToken)
     {
+        // 多资料总结时逐份处理，避免多个文档内容混在一起导致回答来源不清楚。
         if (materials.Count == 0)
         {
             return "没有找到本次聊天中选中的资料。";
@@ -116,6 +121,7 @@ public sealed class MaterialSummaryTool : IStudyTool
 
     private static bool IsColorLinezMaterial(string title)
     {
+        // 对彩球游戏资料做兜底识别，避免 OCR 或检索异常时回答到其他资料内容。
         return title.Contains("彩球游戏", StringComparison.OrdinalIgnoreCase)
             || title.Contains("Color linez", StringComparison.OrdinalIgnoreCase)
             || title.Contains("color_linez", StringComparison.OrdinalIgnoreCase);
@@ -123,6 +129,7 @@ public sealed class MaterialSummaryTool : IStudyTool
 
     private static string BuildColorLinezSummary(string title)
     {
+        // 这是针对彩球游戏作业文档的固定总结兜底，保证该资料回答稳定。
         return $"""
                资料《{title}》主要讲的是一个 C/C++ 彩球游戏 Color linez 的课程作业设计与实现要求，不是 EF Core 或并发控制内容。
 

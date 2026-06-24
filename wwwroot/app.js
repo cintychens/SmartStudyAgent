@@ -1,10 +1,14 @@
+// 当前会话 ID 保存在 localStorage 中，刷新页面后可以继续同一个会话。
 let sessionId = localStorage.getItem("smartStudy.currentSessionId") ?? `web-${Date.now()}`;
 localStorage.setItem("smartStudy.currentSessionId", sessionId);
 
+// 页面主要 DOM 节点缓存，后续渲染和事件绑定都复用这些引用。
 const materialsList = document.querySelector("#materialsList");
 const uploadForm = document.querySelector("#uploadForm");
 const uploadTitle = document.querySelector("#uploadTitle");
 const materialFile = document.querySelector("#materialFile");
+const uploadStatus = document.querySelector("#uploadStatus");
+const uploadSelectedFiles = document.querySelector("#uploadSelectedFiles");
 const refreshMaterials = document.querySelector("#refreshMaterials");
 const messages = document.querySelector("#messages");
 const chatForm = document.querySelector("#chatForm");
@@ -35,7 +39,6 @@ const agentDecision = document.querySelector("#agentDecision");
 const toolHistory = document.querySelector("#toolHistory");
 const learningHistory = document.querySelector("#learningHistory");
 const clearLearningHistory = document.querySelector("#clearLearningHistory");
-const knowledgeTags = document.querySelector("#knowledgeTags");
 
 let messageTotal = 0;
 let cachedMaterials = [];
@@ -47,6 +50,7 @@ const TOOL_HISTORY_KEY = "smartStudy.toolHistory";
 const LEARNING_HISTORY_KEY = "smartStudy.learningHistory";
 const SELECTED_MATERIALS_KEY = "smartStudy.selectedMaterialIds";
 
+// 恢复上次保存的资料选择范围。
 for (const id of readStoredList(SELECTED_MATERIALS_KEY)) {
     selectedMaterialIds.add(id);
 }
@@ -64,6 +68,7 @@ if (memoryStatus) {
 }
 
 function addMessage(role, content) {
+    // 创建一条聊天消息，用户消息靠右，Agent 消息靠左。
     removeWelcomeCard();
 
     const row = document.createElement("div");
@@ -92,11 +97,13 @@ function addMessage(role, content) {
 }
 
 function updateMessageBubble(bubble, content) {
+    // 流式输出时持续更新同一个 AI 气泡，避免生成多条重复消息。
     bubble.textContent = formatAssistantText(content);
     messages.scrollTop = messages.scrollHeight;
 }
 
 function formatAssistantText(content) {
+    // 对模型返回文本做轻量换行整理，让标题、序号、答案和解析更易读。
     return String(content ?? "")
         .replace(/\r\n/g, "\n")
         .replace(/([^\n])(\s*(?:#{2,6}\s+))/g, "$1\n\n$2")
@@ -108,6 +115,7 @@ function formatAssistantText(content) {
 }
 
 function renderWelcomeCard() {
+    // 没有聊天记录时显示欢迎卡片和常用提问入口。
     messages.innerHTML = `
         <section class="welcome-card">
             <div class="welcome-icon">S</div>
@@ -137,6 +145,7 @@ function updateMessageCount() {
 }
 
 function getStoredSessions() {
+    // 多会话信息保存在本地浏览器中，后端只关心 sessionId 对应的 Memory。
     const raw = localStorage.getItem("smartStudy.sessions");
     const sessions = raw ? JSON.parse(raw) : [];
     if (!sessions.some((session) => session.id === sessionId)) {
@@ -148,6 +157,7 @@ function getStoredSessions() {
 }
 
 function renderSessionSelect() {
+    // 根据本地会话列表渲染顶部会话下拉框。
     const sessions = getStoredSessions();
     sessionSelect.innerHTML = "";
     for (const session of sessions) {
@@ -160,6 +170,7 @@ function renderSessionSelect() {
 }
 
 function setConnectionState(isConnected) {
+    // 根据 API 请求结果更新右上角后端连接状态。
     connectionDot.classList.toggle("offline", !isConnected);
     connectionText.textContent = isConnected ? "后端已连接" : "后端未连接";
 }
@@ -170,6 +181,7 @@ function setBusy(isBusy) {
 }
 
 async function loadMaterials() {
+    // 从后端读取资料列表，并刷新资料卡片、资料选择器和知识点面板。
     materialsList.innerHTML = `<div class="empty-state">正在加载资料...</div>`;
 
     try {
@@ -182,7 +194,6 @@ async function loadMaterials() {
         materialCount.textContent = `${materials.length} 份`;
 
         if (materials.length === 0) {
-            renderKnowledgePanel([]);
             materialsList.innerHTML = `<div class="empty-state">还没有课程资料，请先上传文件。</div>`;
             return;
         }
@@ -203,7 +214,6 @@ async function loadMaterials() {
             `;
             materialsList.appendChild(item);
         }
-        refreshKnowledgePanel(materials);
     } catch (error) {
         setConnectionState(false);
         materialsList.innerHTML = `<div class="empty-state">资料加载失败：${escapeHtml(error.message)}</div>`;
@@ -211,6 +221,7 @@ async function loadMaterials() {
 }
 
 function renderSteps(agentSteps) {
+    // 将后端返回的 AgentStep 渲染成右侧可折叠的执行时间轴。
     if (!agentSteps || agentSteps.length === 0) {
         steps.className = "timeline empty-state";
         steps.textContent = "这次回答没有调用工具。";
@@ -254,6 +265,7 @@ function renderSteps(agentSteps) {
 }
 
 function normalizeAgentStep(step) {
+    // 兼容大小写不同的 JSON 字段，保证前端渲染稳定。
     return {
         step: step.step ?? step.Step ?? "",
         thought: step.thought ?? step.Thought ?? "",
@@ -264,6 +276,7 @@ function normalizeAgentStep(step) {
 }
 
 function summarizeObservation(action, value) {
+    // Trace 面板只展示工具结果摘要，完整工具结果放在折叠详情中。
     const text = String(value ?? "")
         .replace(/\s+/g, " ")
         .trim();
@@ -301,6 +314,7 @@ function summarizeObservation(action, value) {
 }
 
 function renderExecutionPanels(agentSteps, userQuestion) {
+    // 根据本次 Agent 执行步骤刷新决策卡片、Tool History 和 Learning History。
     if (!Array.isArray(agentSteps) || agentSteps.length === 0) {
         renderAgentDecision(null, userQuestion);
         return;
@@ -329,6 +343,7 @@ function renderExecutionPanels(agentSteps, userQuestion) {
 }
 
 function renderAgentDecision(step, userQuestion) {
+    // Agent Decision 卡片用于解释本次识别到的意图、选择的 Agent 和调用的工具。
     if (!agentDecision) {
         return;
     }
@@ -393,6 +408,7 @@ function getCompletionText(toolName) {
 }
 
 function addToolHistory(entry) {
+    // Tool History 独立于 ReAct Trace，最多保留最近 20 条工具调用。
     const items = readStoredList(TOOL_HISTORY_KEY);
     items.unshift(entry);
     localStorage.setItem(TOOL_HISTORY_KEY, JSON.stringify(items.slice(0, 20)));
@@ -400,6 +416,7 @@ function addToolHistory(entry) {
 }
 
 function renderToolHistory() {
+    // 从 localStorage 读取工具调用历史并渲染到右侧面板。
     if (!toolHistory) {
         return;
     }
@@ -423,6 +440,7 @@ function renderToolHistory() {
 }
 
 function addLearningHistory(entry) {
+    // Learning History 记录学习任务，不影响 Conversation Memory。
     const items = readStoredList(LEARNING_HISTORY_KEY);
     items.unshift(entry);
     localStorage.setItem(LEARNING_HISTORY_KEY, JSON.stringify(items.slice(0, 50)));
@@ -430,6 +448,7 @@ function addLearningHistory(entry) {
 }
 
 function renderLearningHistory() {
+    // 渲染最近 50 条学习历史，供用户回顾自己做过的学习任务。
     if (!learningHistory) {
         return;
     }
@@ -482,6 +501,7 @@ function formatDateOnly(value) {
 }
 
 async function refreshKnowledgePanel(materials) {
+    // 根据资料预览内容提取关键词，并显示在 Knowledge Panel。
     if (!knowledgeTags) {
         return;
     }
@@ -579,6 +599,7 @@ function extractKnowledgeTerms(text) {
 }
 
 function renderMaterialPicker() {
+    // 根据已上传资料列表渲染弹窗中的多选项。
     if (!materialPickerList || !selectedMaterials) {
         return;
     }
@@ -631,6 +652,7 @@ function persistSelectedMaterials() {
 }
 
 function openMaterialPicker() {
+    // 打开资料选择弹窗，并把当前已保存的选择复制到临时选择集合。
     if (!materialPicker) {
         return;
     }
@@ -652,6 +674,7 @@ function closeMaterialPickerDialog() {
 }
 
 function saveMaterialSelection() {
+    // 保存本次资料选择，并同步到 localStorage 和底部资料标签。
     selectedMaterialIds.clear();
     for (const id of pendingMaterialIds) {
         selectedMaterialIds.add(id);
@@ -662,8 +685,126 @@ function saveMaterialSelection() {
     closeMaterialPickerDialog();
 }
 
+function setUploadStatus(message) {
+    // 更新上传状态文本。
+    if (uploadStatus) {
+        uploadStatus.textContent = message ?? "";
+    }
+}
+
+function renderSelectedUploadFiles() {
+    // 文件选择后在上传区域显示已选择的文件名和大小。
+    if (!uploadSelectedFiles) {
+        return;
+    }
+
+    const files = Array.from(materialFile.files ?? []);
+    if (files.length === 0) {
+        uploadSelectedFiles.innerHTML = "";
+        return;
+    }
+
+    uploadSelectedFiles.innerHTML = `
+        <strong>已选择 ${files.length} 个文件</strong>
+        <ul>
+            ${files.map((file) => `<li>${escapeHtml(file.name)} <span>${formatSize(file.size)}</span></li>`).join("")}
+        </ul>
+    `;
+}
+
+materialFile.addEventListener("change", renderSelectedUploadFiles);
+
 uploadForm.addEventListener("submit", async (event) => {
     event.preventDefault();
+    event.stopImmediatePropagation();
+
+    const files = Array.from(materialFile.files ?? []);
+    if (files.length === 0) {
+        return;
+    }
+
+    const button = uploadForm.querySelector("button");
+    const originalButtonText = button.textContent;
+    const sharedTitle = uploadTitle.value.trim();
+    const uploaded = [];
+    const failed = [];
+
+    button.disabled = true;
+    materialFile.disabled = true;
+    uploadTitle.disabled = true;
+    setUploadStatus(`准备上传 ${files.length} 个文件...`);
+
+    try {
+        for (let index = 0; index < files.length; index++) {
+            const file = files[index];
+            const current = index + 1;
+            const formData = new FormData();
+            formData.append("file", file);
+            formData.append("title", files.length === 1 ? sharedTitle : "");
+
+            button.textContent = `上传 ${current}/${files.length}`;
+            setUploadStatus(`正在上传 ${current}/${files.length}：${file.name}`);
+
+            const uploadResult = await uploadMaterial(formData, (percent) => {
+                button.textContent = `上传 ${current}/${files.length} · ${percent}%`;
+                setUploadStatus(`正在上传 ${current}/${files.length}：${file.name}（${percent}%）`);
+            }, (seconds) => {
+                button.textContent = `解析 ${current}/${files.length}`;
+                setUploadStatus(`后端正在解析/OCR ${current}/${files.length}：${file.name}（已等待 ${seconds} 秒）`);
+            });
+
+            button.textContent = `解析 ${current}/${files.length}`;
+            setUploadStatus(`正在解析 ${current}/${files.length}：${file.name}`);
+
+            const text = uploadResult.text;
+            const data = tryParseJson(text);
+            if (!uploadResult.ok) {
+                failed.push({
+                    name: file.name,
+                    message: data?.error ?? text ?? `上传失败，状态码 ${uploadResult.status}`
+                });
+                continue;
+            }
+
+            uploaded.push(data);
+        }
+
+        uploadTitle.value = "";
+        materialFile.value = "";
+        renderSelectedUploadFiles();
+        await loadMaterials();
+
+        if (uploaded.length > 0) {
+            const names = uploaded
+                .map((item, index) => `${index + 1}. 《${item.title}》 ${item.characterCount} 字符`)
+                .join("\n");
+            addMessage("assistant", `已上传并读取 ${uploaded.length} 个文件：\n${names}\n现在可以在问答模块选择这些资料提问。`);
+        }
+
+        if (failed.length > 0) {
+            const details = failed
+                .map((item, index) => `${index + 1}. ${item.name}：${item.message}`)
+                .join("\n");
+            addMessage("assistant", `有 ${failed.length} 个文件上传失败：\n${details}`);
+        }
+
+        setUploadStatus(uploaded.length === files.length
+            ? `上传完成：成功 ${uploaded.length} 个文件。`
+            : `上传完成：成功 ${uploaded.length} 个，失败 ${failed.length} 个。`);
+    } catch (error) {
+        setUploadStatus(`上传失败：${error.message}`);
+        addMessage("assistant", `上传失败：${error.message}`);
+    } finally {
+        button.disabled = false;
+        materialFile.disabled = false;
+        uploadTitle.disabled = false;
+        button.textContent = originalButtonText;
+    }
+}, true);
+
+uploadForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    return;
 
     const file = materialFile.files[0];
     if (!file) {
@@ -681,6 +822,8 @@ uploadForm.addEventListener("submit", async (event) => {
 
         const uploadResult = await uploadMaterial(formData, (percent) => {
             button.textContent = `上传中 ${percent}%`;
+        }, (seconds) => {
+            button.textContent = `正在解析文件... ${seconds}s`;
         });
 
         button.textContent = "正在解析文件...";
@@ -721,6 +864,7 @@ chatInput.addEventListener("input", () => {
 });
 
 async function sendMessage() {
+    // 发送用户问题：先显示用户气泡，再优先使用流式接口。
     const message = chatInput.value.trim();
     if (!message || chatInput.disabled) {
         return;
@@ -755,6 +899,7 @@ async function sendMessage() {
 }
 
 async function sendMessageWithNormalApi(message) {
+    // 浏览器不支持流式读取时，退回普通 API 一次性返回答案。
     steps.className = "timeline empty-state";
     steps.textContent = "Agent 正在思考并调用工具...";
 
@@ -780,6 +925,7 @@ async function sendMessageWithNormalApi(message) {
 }
 
 async function streamAgentAnswer(message) {
+    // 通过 Server-Sent Events 接收步骤和答案分片，实现前端流式输出。
     if (!window.ReadableStream || !window.TextDecoder) {
         return false;
     }
@@ -916,6 +1062,7 @@ materialPicker?.addEventListener("click", (event) => {
     }
 });
 
+if (false) {
 knowledgeTags?.addEventListener("click", (event) => {
     const tag = event.target.closest(".knowledge-tag");
     if (!tag) {
@@ -928,6 +1075,7 @@ knowledgeTags?.addEventListener("click", (event) => {
     moduleItems.forEach((item) => item.classList.toggle("active", item.dataset.target === "chatModule"));
     chatInput.focus();
 });
+}
 
 materialsList.addEventListener("click", async (event) => {
     const previewButton = event.target.closest(".preview-material");
@@ -1016,6 +1164,7 @@ async function previewMaterialDialog(id) {
 }
 
 async function previewMaterialFileDialog(id) {
+    // 资料预览优先展示原始文件；PDF 用 iframe，TXT/MD 显示原文，PPTX 提供下载。
     showModal("资料预览", `
         <div class="preview-loading">正在读取原始文件...</div>
     `);
@@ -1225,6 +1374,7 @@ function getMaterialType(material) {
 }
 
 function showModal(title, html) {
+    // 通用弹窗函数，资料预览和错误提示都复用它。
     const old = document.querySelector(".modal-backdrop");
     old?.remove();
 
@@ -1251,22 +1401,54 @@ function shorten(value, maxLength) {
     return value.length <= maxLength ? value : `${value.slice(0, maxLength)}...`;
 }
 
-function uploadMaterial(formData, onProgress) {
+function uploadMaterial(formData, onProgress, onProcessing) {
+    // 使用 XMLHttpRequest 上传文件，这样可以读取实时上传进度。
     return new Promise((resolve, reject) => {
         const xhr = new XMLHttpRequest();
         xhr.open("POST", "/api/materials/upload");
         xhr.timeout = 180000;
+        let processingTimer = null;
+        let processingStartedAt = 0;
+
+        const startProcessingTimer = () => {
+            if (processingTimer) {
+                return;
+            }
+
+            onProgress?.(100);
+            processingStartedAt = Date.now();
+            onProcessing?.(0);
+            processingTimer = window.setInterval(() => {
+                const seconds = Math.max(1, Math.round((Date.now() - processingStartedAt) / 1000));
+                onProcessing?.(seconds);
+            }, 1000);
+        };
+
+        const stopProcessingTimer = () => {
+            if (!processingTimer) {
+                return;
+            }
+
+            window.clearInterval(processingTimer);
+            processingTimer = null;
+        };
 
         xhr.upload.onprogress = (event) => {
             if (!event.lengthComputable) {
                 return;
             }
 
-            const percent = Math.max(1, Math.min(99, Math.round((event.loaded / event.total) * 100)));
+            const percent = Math.max(1, Math.min(100, Math.round((event.loaded / event.total) * 100)));
             onProgress?.(percent);
         };
 
+        xhr.upload.onload = () => {
+            startProcessingTimer();
+        };
+
         xhr.onload = () => {
+            stopProcessingTimer();
+            onProgress?.(100);
             resolve({
                 ok: xhr.status >= 200 && xhr.status < 300,
                 status: xhr.status,
@@ -1274,8 +1456,14 @@ function uploadMaterial(formData, onProgress) {
             });
         };
 
-        xhr.onerror = () => reject(new Error("上传连接失败，请确认后端仍在运行。"));
-        xhr.ontimeout = () => reject(new Error("上传或解析时间过长，请尝试换一个较小文件，或先拆分 PDF/PPTX。"));
+        xhr.onerror = () => {
+            stopProcessingTimer();
+            reject(new Error("上传连接失败，请确认后端仍在运行。"));
+        };
+        xhr.ontimeout = () => {
+            stopProcessingTimer();
+            reject(new Error("上传或解析时间过长，请尝试换一个较小文件，或先拆分 PDF/PPTX。"));
+        };
         xhr.send(formData);
     });
 }
