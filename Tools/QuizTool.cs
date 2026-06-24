@@ -27,7 +27,6 @@ public sealed class QuizTool : IStudyTool
         // 从用户问题中解析题目数量和题型
         var query = arguments.TryGetValue("query", out var value) ? value : string.Empty;
         var questionCount = ExtractQuestionCount(query);
-        var questionType = ExtractQuestionType(query);
         var selectedMaterialIds = ToolArgumentHelper.GetMaterialIds(arguments);
         string source;
 
@@ -39,6 +38,7 @@ public sealed class QuizTool : IStudyTool
         else
         {
             var results = await _documents.SearchAsync(query, 3, cancellationToken);
+
             source = results.Count > 0
                 ? string.Join(Environment.NewLine, results.Select(r => r.Snippet))
                 : await _documents.BuildCorpusAsync(cancellationToken);
@@ -46,50 +46,92 @@ public sealed class QuizTool : IStudyTool
 
         if (string.IsNullOrWhiteSpace(source))
         {
-            return new ToolExecutionResult(Name, "当前没有可用于生成练习题的资料内容。");
+            return new ToolExecutionResult(
+                Name,
+                "当前没有可用于生成练习题的资料内容。");
         }
 
-        // 题目数量较多时给 LLM 更多资料上下文，减少题目重复。
+        // 题目较多时提供更多上下文
         var maxSourceLength = questionCount >= 15 ? 9000 : 5000;
-        var clipped = source.Length > maxSourceLength ? source[..maxSourceLength] : source;
-        var typeInstruction = BuildTypeInstruction(questionType);
+        var clipped = source.Length > maxSourceLength
+            ? source[..maxSourceLength]
+            : source;
 
         var quiz = await _llm.CompleteAsync(
             """
-            You are PracticeAgent in SmartStudyAgent.
-            Create practice questions in Chinese strictly from the provided course material.
-            Follow the requested question count exactly.
-            Do not summarize the material unless a question needs context.
-            Do not use knowledge that is not present in the material.
-            Every question must include an answer and a short explanation.
+            你是 SmartStudyAgent 中的 PracticeAgent。
+
+            请严格依据提供的课程资料出题。
+
+            要求：
+
+            1. 必须严格按照用户要求生成题目。
+            2. 不允许减少题目数量。
+            3. 不允许遗漏任何部分。
+            4. 不允许编造资料之外的知识。
+            5. 每一道题后必须给出答案和解析。
+            6. 多选题允许多个正确答案。
+            7. 综合题必须给出完整答案。
+            8. 输出使用 Markdown 格式。
             """,
+
             $"""
             用户需求：
+
             {query}
 
-            请根据下面资料生成恰好 {questionCount} 道{questionType}。
-            {typeInstruction}
+            请严格按照用户需求出题。
 
-            输出格式必须是：
+            例如：
 
-            ## 练习题
-            1. 【{questionType}】题目内容
-               A. ...
-               B. ...
-               C. ...
-               D. ...
-               答案：...
-               解析：...
+            如果用户要求：
+
+            10道选择题、5道多选题、1道综合题
+
+            则必须分为：
+
+            ## 第一部分：选择题（10题）
+
+            1.
+            A.
+            B.
+            C.
+            D.
+            答案：
+            解析：
+
+            ## 第二部分：多选题（5题）
+
+            11.
+            A.
+            B.
+            C.
+            D.
+            答案：
+            解析：
+
+            ## 第三部分：综合题（1题）
+
+            16.
+            答案：
+            解析：
+
+            如果用户只要求一种题型，则全部生成这种题型。
 
             重要要求：
-            - 题目数量必须是 {questionCount} 道，不能少于或多于这个数量。
-            - 每一道题都必须基于资料内容。
-            - 如果用户要求选择题，每题必须提供 A、B、C、D 四个选项。
-            - 答案和解析必须紧跟在对应题目下面。
 
-            资料内容：
+            - 必须严格满足用户要求的数量。
+            - 不允许漏掉多选题和综合题。
+            - 所有题目都必须来源于资料内容。
+            - 每道题必须包含答案和解析。
+            - 输出使用 Markdown。
+            - 不要生成与课程资料无关的问题。
+
+            课程资料：
+
             {clipped}
             """,
+
             cancellationToken);
 
         return new ToolExecutionResult(Name, quiz);
@@ -145,12 +187,12 @@ public sealed class QuizTool : IStudyTool
     {
         // 为不同题型补充明确格式要求，约束 LLM 输出。
         return questionType switch
-        {
-            "选择题" => "题型要求：全部生成选择题，每题必须有 A、B、C、D 四个选项，并且只能有一个正确答案。",
-            "判断题" => "题型要求：全部生成判断题，答案只能写“正确”或“错误”，并给出一句解析。",
-            "简答题" => "题型要求：全部生成简答题，答案要简洁准确，解析说明答案依据。",
-            _ => "题型要求：可以混合选择题、判断题和简答题，但必须符合用户的数量要求。"
-        };
+{
+    "选择题" => "题型要求：全部生成选择题，每题必须有 A、B、C、D 四个选项，并且只能有一个正确答案。",
+    "判断题" => "题型要求：全部生成判断题，答案只能写“正确”或“错误”，并给出一句解析。",
+    "简答题" => "题型要求：全部生成简答题，答案要简洁准确，解析说明答案依据。",
+    _ => "题型要求：可以混合选择题、判断题和简答题，但必须符合用户的数量要求。"
+};
     }
 
     private static readonly IReadOnlyList<(string Text, int Value)> ChineseNumberMap = new List<(string, int)>

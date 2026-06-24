@@ -60,7 +60,8 @@ public sealed class OpenAiCompatibleLlmService : ILlmService
                 new { role = "system", content = systemPrompt },
                 new { role = "user", content = userPrompt }
             },
-            temperature = 0.2
+            temperature = 0.2,
+            max_tokens = 4096
         };
 
         request.Content = new StringContent(
