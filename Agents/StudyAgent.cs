@@ -192,9 +192,9 @@ public sealed class StudyAgent
         }
 
         var toolContext = steps.Count == 0
-            ? "No tool was called."
+            ? "本次没有调用工具。"
             : string.Join(Environment.NewLine, steps.Select(s =>
-                $"Agent: {s.Agent}\nThought: {s.Thought}\nAction: {s.Action}\nObservation: {s.Observation}"));
+                $"执行者：{s.Agent}\n思考：{s.Thought}\n行动：{s.Action}\n观察结果：{s.Observation}"));
 
         var memoryContext = _memory.BuildContext(sessionId);
         var longTermMemory = _longTermMemory.Get(sessionId);
@@ -236,23 +236,23 @@ public sealed class StudyAgent
 """;
 
         var userPrompt = $"""
-                          Available tools:
+                          可用工具：
                           {toolList}
 
-                          Conversation memory:
+                          对话记忆：
                           {memoryContext}
 
-                          Long-term memory:
-                          Learning goal: {longTermMemory.LearningGoal ?? "Not set"}
-                          Preference: {longTermMemory.Preference ?? "Not set"}
+                          长期记忆：
+                          学习目标：{longTermMemory.LearningGoal ?? "未设置"}
+                          学习偏好：{longTermMemory.Preference ?? "未设置"}
 
-                          User request:
+                          用户请求：
                           {userMessage}
 
-                          Agent loop trace:
+                          Agent 执行轨迹：
                           {toolContext}
 
-                          Please produce the final answer for the user.
+                          请根据以上信息，为用户生成最终中文回答。
                           """;
 
         return await _llm.CompleteAsync(systemPrompt, userPrompt, cancellationToken);
